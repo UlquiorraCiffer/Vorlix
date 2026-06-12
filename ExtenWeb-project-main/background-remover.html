@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Background Remover — Vorlix</title>
+  <meta name="description" content="Remove image backgrounds instantly with AI. Free, no signup." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <nav class="navbar">
+    <a href="index.html" class="logo">Vorlix</a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="background-remover.html" class="active">Background Remover</a>
+      <a href="image-upscaler.html">Image Upscaler</a>
+    </div>
+  </nav>
+
+  <main class="container tool-page">
+    <h1 class="page-title">Background Remover</h1>
+    <p class="page-subtitle">Upload an image and AI removes the background instantly.</p>
+
+    <!-- AdSense placeholder -->
+    <div class="ad-placeholder" aria-hidden="true">Advertisement</div>
+
+    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload image">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0 4 4m-4-4-4 4"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+      <p><strong>Drag &amp; drop</strong> an image here</p>
+      <p class="muted">PNG, JPG or WEBP — max 12&nbsp;MB</p>
+      <button type="button" class="btn btn-primary" id="browseBtn">Choose File</button>
+      <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp" hidden />
+    </div>
+
+    <div id="loading" class="loading hidden">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Removing background…</p>
+    </div>
+
+    <div id="error" class="error-box hidden" role="alert"></div>
+
+    <section id="results" class="compare-grid hidden">
+      <figure>
+        <figcaption>Original</figcaption>
+        <img id="originalImg" alt="Original image" />
+      </figure>
+      <figure>
+        <figcaption>Result</figcaption>
+        <div class="checker"><img id="resultImg" alt="Image with background removed" /></div>
+      </figure>
+    </section>
+
+    <div id="actions" class="actions hidden">
+      <a id="downloadBtn" class="btn btn-primary" download="vorlix-no-background.png">Download Result</a>
+      <button type="button" class="btn btn-secondary" id="resetBtn">Try Another Image</button>
+    </div>
+
+    <!-- AdSense placeholder -->
+    <div class="ad-placeholder" aria-hidden="true">Advertisement</div>
+  </main>
+
+  <footer class="footer">
+    <p>© 2025 Vorlix</p>
+  </footer>
+
+  <script src="config.js"></script>
+  <script>
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const browseBtn = document.getElementById('browseBtn');
+    const loading = document.getElementById('loading');
+    const errorBox = document.getElementById('error');
+    const results = document.getElementById('results');
+    const actions = document.getElementById('actions');
+    const originalImg = document.getElementById('originalImg');
+    const resultImg = document.getElementById('resultImg');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    browseBtn.addEventListener('click', (e) => { e.stopPropagation(); fileInput.click(); });
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+    ['dragenter', 'dragover'].forEach(evt =>
+      dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add('dragover'); }));
+    ['dragleave', 'drop'].forEach(evt =>
+      dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); }));
+    dropzone.addEventListener('drop', (e) => {
+      const file = e.dataTransfer.files[0];
+      if (file) handleFile(file);
+    });
+
+    resetBtn.addEventListener('click', () => {
+      results.classList.add('hidden');
+      actions.classList.add('hidden');
+      errorBox.classList.add('hidden');
+      dropzone.classList.remove('hidden');
+      fileInput.value = '';
+    });
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.classList.remove('hidden');
+      loading.classList.add('hidden');
+      dropzone.classList.remove('hidden');
+    }
+
+    async function handleFile(file) {
+      errorBox.classList.add('hidden');
+      if (!file.type.startsWith('image/')) return showError('Please upload an image file (PNG, JPG or WEBP).');
+      if (file.size > 12 * 1024 * 1024) return showError('Image is too large. Maximum size is 12 MB.');
+      if (!window.REMOVEBG_API_KEY || REMOVEBG_API_KEY === 'your-key-here') {
+        return showError('Remove.bg API key is not configured. Add your key to config.js.');
+      }
+
+      originalImg.src = URL.createObjectURL(file);
+      dropzone.classList.add('hidden');
+      results.classList.add('hidden');
+      actions.classList.add('hidden');
+      loading.classList.remove('hidden');
+
+      try {
+        const formData = new FormData();
+        formData.append('image_file', file);
+        formData.append('size', 'auto');
+
+        const res = await fetch('https://api.remove.bg/v1.0/removebg', {
+          method: 'POST',
+          headers: { 'X-Api-Key': REMOVEBG_API_KEY },
+          body: formData
+        });
+
+        if (!res.ok) {
+          let msg = 'Background removal failed (HTTP ' + res.status + ').';
+          try {
+            const err = await res.json();
+            if (err.errors && err.errors[0] && err.errors[0].title) msg = err.errors[0].title;
+          } catch (_) { /* non-JSON error body */ }
+          throw new Error(msg);
+        }
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        resultImg.src = url;
+        downloadBtn.href = url;
+
+        loading.classList.add('hidden');
+        results.classList.remove('hidden');
+        actions.classList.remove('hidden');
+      } catch (err) {
+        showError(err.message || 'Something went wrong. Please try again.');
+      }
+    }
+  </script>
+</body>
+</html>

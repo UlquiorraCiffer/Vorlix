@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image Upscaler — Vorlix</title>
+  <meta name="description" content="Upscale images 2x or 4x with AI. Photo and anime modes. Free, no signup." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <nav class="navbar">
+    <a href="index.html" class="logo">Vorlix</a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="background-remover.html">Background Remover</a>
+      <a href="image-upscaler.html" class="active">Image Upscaler</a>
+    </div>
+  </nav>
+
+  <main class="container tool-page">
+    <h1 class="page-title">Image Upscaler</h1>
+    <p class="page-subtitle">Enlarge your images up to 4x with AI — for photos and anime art.</p>
+
+    <!-- AdSense placeholder -->
+    <div class="ad-placeholder" aria-hidden="true">Advertisement</div>
+
+    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload image">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0 4 4m-4-4-4 4"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+      <p><strong>Drag &amp; drop</strong> an image here</p>
+      <p class="muted">PNG, JPG or WEBP — max 4&nbsp;MB</p>
+      <button type="button" class="btn btn-primary" id="browseBtn">Choose File</button>
+      <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp" hidden />
+    </div>
+
+    <!-- Selection UI: shown after an image is uploaded -->
+    <section id="options" class="options hidden">
+      <figure class="preview">
+        <img id="previewImg" alt="Uploaded image preview" />
+      </figure>
+
+      <div class="option-group">
+        <span class="option-label">Upscale amount</span>
+        <div class="toggle-group" id="scaleGroup" role="group" aria-label="Upscale amount">
+          <button type="button" class="toggle-btn active" data-scale="2">2x</button>
+          <button type="button" class="toggle-btn" data-scale="4">4x</button>
+        </div>
+      </div>
+
+      <div class="option-group">
+        <span class="option-label">Image type</span>
+        <div class="toggle-group" id="typeGroup" role="group" aria-label="Image type">
+          <button type="button" class="toggle-btn active" data-type="normal">Normal Image</button>
+          <button type="button" class="toggle-btn" data-type="anime">Anime Image</button>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="upscaleBtn">Upscale Image</button>
+        <button type="button" class="btn btn-secondary" id="changeBtn">Change Image</button>
+      </div>
+    </section>
+
+    <div id="loading" class="loading hidden">
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="loadingText">Upscaling image… this can take up to a minute.</p>
+    </div>
+
+    <div id="error" class="error-box hidden" role="alert"></div>
+
+    <section id="results" class="compare-grid hidden">
+      <figure>
+        <figcaption>Before</figcaption>
+        <img id="beforeImg" alt="Original image" />
+      </figure>
+      <figure>
+        <figcaption>After</figcaption>
+        <img id="afterImg" alt="Upscaled image" />
+      </figure>
+    </section>
+
+    <div id="resultActions" class="actions hidden">
+      <a id="downloadBtn" class="btn btn-primary" download="vorlix-upscaled.png" target="_blank" rel="noopener">Download Result</a>
+      <button type="button" class="btn btn-secondary" id="resetBtn">Try Another Image</button>
+    </div>
+
+    <!-- AdSense placeholder -->
+    <div class="ad-placeholder" aria-hidden="true">Advertisement</div>
+  </main>
+
+  <footer class="footer">
+    <p>© 2025 Vorlix</p>
+  </footer>
+
+  <script src="config.js"></script>
+  <script>
+    // Note: Replicate is called via our Vercel serverless proxy (/api/upscale)
+    // because the Replicate API does not allow direct browser calls (CORS).
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const browseBtn = document.getElementById('browseBtn');
+    const options = document.getElementById('options');
+    const previewImg = document.getElementById('previewImg');
+    const loading = document.getElementById('loading');
+    const loadingText = document.getElementById('loadingText');
+    const errorBox = document.getElementById('error');
+    const results = document.getElementById('results');
+    const resultActions = document.getElementById('resultActions');
+    const beforeImg = document.getElementById('beforeImg');
+    const afterImg = document.getElementById('afterImg');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    let imageDataUrl = null;
+    let selectedScale = 2;
+    let selectedType = 'normal';
+    let pollTimer = null;
+
+    // --- Upload handling ---
+    browseBtn.addEventListener('click', (e) => { e.stopPropagation(); fileInput.click(); });
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+    ['dragenter', 'dragover'].forEach(evt =>
+      dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add('dragover'); }));
+    ['dragleave', 'drop'].forEach(evt =>
+      dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); }));
+    dropzone.addEventListener('drop', (e) => {
+      const file = e.dataTransfer.files[0];
+      if (file) handleFile(file);
+    });
+
+    function handleFile(file) {
+      errorBox.classList.add('hidden');
+      if (!file.type.startsWith('image/')) return showError('Please upload an image file (PNG, JPG or WEBP).');
+      // Vercel serverless functions accept request bodies up to ~4.5 MB,
+      // and base64 encoding adds ~33%, so keep uploads under 3 MB to be safe.
+      if (file.size > 3 * 1024 * 1024) return showError('Image is too large for upscaling. Maximum size is 3 MB.');
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        imageDataUrl = reader.result;
+        previewImg.src = imageDataUrl;
+        beforeImg.src = imageDataUrl;
+        dropzone.classList.add('hidden');
+        results.classList.add('hidden');
+        resultActions.classList.add('hidden');
+        options.classList.remove('hidden');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // --- Toggle buttons ---
+    function setupToggles(groupId, dataAttr, onChange) {
+      const group = document.getElementById(groupId);
+      group.addEventListener('click', (e) => {
+        const btn = e.target.closest('.toggle-btn');
+        if (!btn) return;
+        group.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        onChange(btn.dataset[dataAttr]);
+      });
+    }
+    setupToggles('scaleGroup', 'scale', (v) => { selectedScale = parseInt(v, 10); });
+    setupToggles('typeGroup', 'type', (v) => { selectedType = v; });
+
+    // --- Reset / change image ---
+    document.getElementById('changeBtn').addEventListener('click', resetAll);
+    document.getElementById('resetBtn').addEventListener('click', resetAll);
+    function resetAll() {
+      if (pollTimer) clearTimeout(pollTimer);
+      options.classList.add('hidden');
+      results.classList.add('hidden');
+      resultActions.classList.add('hidden');
+      loading.classList.add('hidden');
+      errorBox.classList.add('hidden');
+      dropzone.classList.remove('hidden');
+      fileInput.value = '';
+      imageDataUrl = null;
+    }
+
+    function showError(msg) {
+      if (pollTimer) clearTimeout(pollTimer);
+      errorBox.textContent = msg;
+      errorBox.classList.remove('hidden');
+      loading.classList.add('hidden');
+      if (imageDataUrl) options.classList.remove('hidden');
+      else dropzone.classList.remove('hidden');
+    }
+
+    // --- Upscale via serverless proxy ---
+    document.getElementById('upscaleBtn').addEventListener('click', async () => {
+      if (!imageDataUrl) return;
+      errorBox.classList.add('hidden');
+      options.classList.add('hidden');
+      loading.classList.remove('hidden');
+      loadingText.textContent = 'Starting upscale…';
+
+      try {
+        const res = await fetch('/api/upscale', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: imageDataUrl, scale: selectedScale, type: selectedType })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to start upscaling (HTTP ' + res.status + ').');
+        pollStatus(data.id, Date.now());
+      } catch (err) {
+        showError(err.message || 'Something went wrong. Please try again.');
+      }
+    });
+
+    const MAX_WAIT_MS = 5 * 60 * 1000; // give up after 5 minutes
+
+    async function pollStatus(id, startedAt) {
+      if (Date.now() - startedAt > MAX_WAIT_MS) {
+        return showError('Upscaling timed out. Please try again with a smaller image.');
+      }
+      try {
+        const res = await fetch('/api/upscale-status?id=' + encodeURIComponent(id));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to check status.');
+
+        if (data.status === 'succeeded') {
+          // Output may be a single URL string or an array of URLs.
+          const output = Array.isArray(data.output) ? data.output[0] : data.output;
+          if (!output) throw new Error('The model returned no output. Please try again.');
+          afterImg.src = output;
+          downloadBtn.href = output;
+          loading.classList.add('hidden');
+          results.classList.remove('hidden');
+          resultActions.classList.remove('hidden');
+        } else if (data.status === 'failed' || data.status === 'canceled') {
+          throw new Error(data.error || 'Upscaling failed. Please try a different image.');
+        } else {
+          loadingText.textContent = 'Upscaling image… (' + data.status + ')';
+          pollTimer = setTimeout(() => pollStatus(id, startedAt), 2000);
+        }
+      } catch (err) {
+        showError(err.message || 'Something went wrong while checking progress.');
+      }
+    }
+  </script>
+</body>
+</html>
