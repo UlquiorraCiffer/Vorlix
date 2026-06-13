@@ -115,7 +115,9 @@
       errorBox.classList.add('hidden');
       if (!file.type.startsWith('image/')) return showError('Please upload an image file (PNG, JPG or WEBP).');
       if (file.size > 12 * 1024 * 1024) return showError('Image is too large. Maximum size is 12 MB.');
-      if (!window.REMOVEBG_API_KEY || REMOVEBG_API_KEY === 'your-key-here') {
+      if (!window.REMOVEBG_API_KEY || window.REMOVEBG_API_KEY === 'your-key-here') {
+  return showError('Remove.bg API key is not configured. Add your key to config.js.');
+}
         return showError('Remove.bg API key is not configured. Add your key to config.js.');
       }
 
