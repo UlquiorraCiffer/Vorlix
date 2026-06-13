@@ -3,7 +3,7 @@
 // Remove.bg is called directly from the browser, so its key lives here.
 // WARNING: any key placed in this file is visible to every visitor of the
 // site (browser DevTools > Sources). Use a restricted/free-tier key only.
-const apiKey = "AT5Z58yTotNvxJ9moQh7qqNY";
+const REMOVEBG_API_KEY = "AT5Z58yTotNvxJ9moQh7qqNY";
 
 // NOTE: The Replicate API key is intentionally NOT in this file.
 // Replicate blocks direct browser calls (CORS) and the key must stay secret,
